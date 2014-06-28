@@ -1,0 +1,137 @@
+---
+title: 'Classification: Linear Discriminant Analysis'
+author: "Ryan Kelly"
+date: "June 23, 2014"
+output:
+  html_document:
+    fig_height: 4
+    highlight: pygments
+    theme: united
+    toc: yes
+---
+
+[Visit my website](http://rmdk.ca/) for more like this!
+```{r}
+require(knitr)
+library(ggplot2)
+```
+#### Data Sources:
+
+Heavily borrowed from:
+
+* Textbook: [Introduction to statistical learning](http://www-bcf.usc.edu/~gareth/ISL/)
+
+* Textbook: [Elements of statistical learning](https://statistics.stanford.edu/~tibs/ElemStatLearn/)
+
+* [Wikipedia](http://en.wikipedia.org/)
+
+## 1.0 Overview
+
+LDA provides a less direct approach to modeling the predicted probabilities given some set of predictor(s) _X_. This algorithm models the distribution of the predictors _X_ separately in each of the response classes (given _Y's_), and the uses Bayes' theorem to flip them around into estimates. When these distributions are assumed to be normal, it turns out that the model is very similar to logistic regression.
+
+Why do we need this method?
+
+* When the classes are well-separated, the parameter estimates for the logistic model are surprisingly unstable. LDA does not suffer from this.
+* If _n_ is small and the distribution of the predictors _X_ is approximately normal in each of the classes, the LDA model is more stable than logistic.
+* For these reasons, and some others, LDA is the preferred method when dealing with > 2 response classes.
+
+The LDA classifier assumes that each class comes from a normal distribution with a class-specific mean vector and a common variance. We utilize LDA to estimate the parameters so that we can leverage the Bayes classifier. The Bayes classifier is a simple and highly effective classifier that assigns each observation to the most likely class given its predictor values. The Bayes classifier has the lowest possible error rate out of all classifiers if the terms are correctly specified. Thus LDA is a classifier that attempts to approximate the Bayes classifier.
+
+While some parameters could be specified with some prior class membership probability insight, LDA estimates some of these model parameters by simply using the proportion of the training observations that belong to the _k_th class. For p > 1 predictors, the LDA classifier assumes that the observations in the _k_th class are drawn from a _multivariate gaussian distribution_ which has a class specific mean and common variance.
+
+Once the parameters have been specified, the Bayes classifier draws _p_ (number of predictors) decision boundaries. For example: for p = 3, there are three _pairs of classes_ among the three classes. That is, one Bayes decision boundary separates class 1 from class 2, one separates class 1 from class 3, and one separates class 2 from class 3. The classifier then simply classifies an observation according the region in which it is located.
+
+### Alternative Methods
+
+__Quadratic Discriminant Analysis__ (QDA) holds the same assumptions as LDA except that the co variance matrix that is not common to all _K_ classes.
+
+#### How to choose between them?
+
+The difference is really a bias-variance trade-off. With _p_ predictors, estimating a co variance matrix requires estimating p(p+1)/2 parameters. The QDA estimates a separate co variance matrix for each class, so as the number of predictors becomes high, we experience a computational expense. Conversely, if we assume a common co variance matrix, we only have to do the computation once. LDA is a much less flexible classifier, than QDA, thus has substantially lower variance. However, if the assumption of uniform variance is highly off, then LDA can suffer high bias. In general, LDA tends to be better than QDA if there are relatively few training observations, so therefore reducing variance is crucial. QDA is recommended if the training set is very large, so that the variance of the classifier is not a major concern.
+
+Between Logistic regression LDA and QDA, the biggest things to take into consideration are the type of decision boundary that is required. If highly linear, than LDA and Logistic may prove superior, if non-linear, the edge may be given to QDA. Though keep in mind we can do simple transformations to take non-linearity into consideration with Logistic models, similar to how we did in linear regression.
+
+# Code Examples
+
+### LDA
+
+Again we will use the `Smarket` data. 
+
+```{r}
+library(ISLR)
+attach(Smarket)
+# Split data into testing and training
+train<-Smarket[Year<2005,]
+test<-Smarket[Year==2005,]
+```
+The `lda()` function is part of the `MASS` library.
+
+```{r}
+library(MASS)
+
+lda.fit <- lda(Direction~Lag1 + Lag2, data=train)
+lda.fit
+```
+
+From here we can see the model predicts 49.2% of days in the training data correspond to days which the market went down. We also see the _group means_; these are the average of each predictor within each class. These suggest that there is a tendency for the previous 2 days' returns to be negative on days when the market increases, and a tendency for the previous 2 days' returns to be positive on days when the market declines. The _cooeficients of the linear discrinimants_ output provides the linear combination of `Lag1` and `Lag2 that are used to form the LDA decision rule. We could use these, along with the predictor values to draw the linear discriminant.
+
+The `predict()` function in this case returns a list with three elements. `class`, contains the LDA's predictions about the movement of the market. `posterior`, is a matrix whose _k_th column contains the posterior probability that the corresponding observation belongs to the _k_th class, and `x` contains the linear discriminants.
+
+```{r}
+lda.pred <- predict(lda.fit, test)
+names(lda.pred)
+
+# The results are the same as logistic regression
+table(lda.pred$class, test$Direction)
+mean(lda.pred$class==test$Direction)
+```
+
+Remember, the output of the class variable is simply created by applying a 50% posterior probability. So, if we wanted to use a different threshold, we could easily do so. For example, suppose that we wish to predict a market decrease only if we are very certain that the market will indeed decrease on that day - say, if the posterior probability is at least 90%.
+
+```{r}
+sum(lda.pred$posterior[,1]>0.9)
+```
+
+No days in 2005 meet this threshold, actually, the greatest posterior probability of decrease in all of 2005 was 52.02%, which is not too conclusive.
+
+Again, here is how to do this using the `caret` package
+
+```{r}
+library(caret)
+
+modelFit<- train(Direction~Lag1+Lag2, method='lda',preProcess=c('scale', 'center'), data=train)
+
+confusionMatrix(test$Direction, predict(modelFit, test))
+```
+
+### QDA
+
+The format of this code is identical to the `lda()` function.
+
+```{r}
+qda.fit <- qda(Direction ~ Lag1 + Lag2, data = train)
+qda.fit
+```
+
+There are no linear discriminants since the QDA uses quadratic functions. However, the `predict()` function works just the same.
+
+```{r}
+qda.class <- predict(qda.fit, test)$class
+table(qda.class, test$Direction)
+mean(qda.class == test$Direction)
+```
+
+This suggests that QDA predictions are accurate ~ 60% of the time, which is pretty good for stock market data. Thus the quadratic relationship may be better suited for this problem.
+
+Again, QDA using the `caret` package is very simple.
+
+```{r}
+modelFit <- train(Direction~Lag1+Lag2, method='qda', preProcess = c('scale', 'center'),data=train)
+
+modelFit
+confusionMatrix(test$Direction, predict(modelFit, test))
+```
+
+In this model, we can see that the Negative prediction value is 86%, which means when the market is up, we can predict with up to 86% accuracy that it is going to be up.
+
+[My website link](http://rmdk.ca/)

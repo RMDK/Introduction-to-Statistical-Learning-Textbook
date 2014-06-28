@@ -1,0 +1,304 @@
+---
+title: "Classification"
+author: "Ryan Kelly"
+date: "June 23, 2014"
+output:
+  html_document:
+    fig_height: 4
+    highlight: pygments
+    theme: united
+    toc: yes
+---
+
+[Visit my website](http://rmdk.ca/) for more like this!
+```{r}
+require(knitr)
+library(ggplot2)
+```
+#### Data Sources:
+
+Heavily borrowed from:
+
+* Textbook: [Introduction to statistical learning](http://www-bcf.usc.edu/~gareth/ISL/)
+
+* Textbook: [Elements of statistical learning](https://statistics.stanford.edu/~tibs/ElemStatLearn/)
+
+* UCLA Example [link](http://www.ats.ucla.edu/stat/r/dae/logit.htm)
+
+* [Wikipedia](http://en.wikipedia.org/)
+
+## 1.0 Overview
+
+Linear regression ([tutorial here()]) assumes that the response variable _Y_ is quantitative. However, in many situations we are dealing with _qualitative_ response variables. Generally, we will refer to these types of variables as __categorical__ variables. For example: eye color is categorical since it has values like _brown_, _blue_, and _green_. Classification thereby involves assigning categorical variables to a specific class. Usually, we predict the probability of any observation belonging to a specific class. 
+
+There are many classification techniques, or _classifiers_, that could be used to predict a given qualitative response variables. Examples covered in this notebook include:
+
+  * Logistic Regression
+  * Linear Discriminant Analysis
+  * K-nearest neighbors
+
+Later notebooks ([link here]()) will include more complicated classifiers such as:
+
+  * Generalized additive models
+  * Tree methods
+  * Random forests
+  * Support Vector Machines
+
+Just like linear regression, in classification we have a set of training observations which we leverage to build a classifier, and we test our model performance on the test data to simulate _out of sample error_. In this notebook we will use a dataset of credit card information as model inputs to predict whether an individual will default on their credit card payment.
+
+```{r cache=TRUE}
+# Load the textbook R package
+require(ISLR)
+# Load in the credit data
+attach(Default)
+```
+
+```{r}
+# Lets take a look at the data
+str(Default)
+# How many people actual default?
+tmp <- table(default)
+(tmp[[2]]/tmp[[1]])*100
+```
+
+We can see that these data have 10000 observations of 4 variables, and that only about 3% of people actually default. Let's create a few diagnostic plots to get a sense of the data. Remember, the goal here will be to predict whether someone will default on their credit card payment, based on the variables `student`, `balance` and `income`.
+
+```{r fig.retina=2}
+library(ggplot2); library(gridExtra)
+
+x <- qplot(x=balance, y=income, color=default, shape=default, geom='point')+scale_shape(solid=FALSE)
+y <- qplot(x=default, y=balance, fill=default, geom='boxplot')+guides(fill=FALSE)
+z <- qplot(x=default, y=income, fill=default, geom='boxplot')+guides(fill=FALSE)
+# Plot
+x
+grid.arrange(y, z, nrow=1)
+```
+
+We see that the relationship between the predictor `balance` and the default rate is rather pronounced, this will likely be a major predictor in the forthcoming model.
+
+## Logistic Regression
+
+In the `Default` dataset, where the response variable falls into two categories (yes or no in this case). Rather than modeling the response _Y_ directly, `logistic regression` models the probability that _Y_ belongs to a particular category. Therefore, in our case with the `Default` data, the logistic regression models the probability of defaulting. For example, the probability of `default` given `balance` can be written as
+
+$$Pr(default = Yes|balance)$$
+
+where the values range from 0 to 1. Then for any given value of balance, a prediction can be made for `default`. For example, we could predict that `default = yes` for any person whose predicted probability of defaulting is > 0.5. Yet, we can use these probabilities in various fashions. For example, a company who wishes to conservatively predict individuals who are _at risk_ of default could choose a lower probability threshold, say > 0.1.
+
+Logistic regression uses the _logistic function_ fitted by _maximum likelihood_. The logistic function will always produce an _S-shaped_ curve, so regardless of the value of _x_, we will always return a sensible prediction. To interpret the model we can rearrange the equation so that we return the __odds_. 
+Odds are traditionally used instead of probabilities in horse-racing, since they relate more naturally to the correct betting strategy. Taking the log of the equation simplifies it further. Now it looks similar to what we have seen in linear regression.
+
+$$log(p(X) / 1-p(X)) = β0 + β1X$$
+
+The left hand side is now the _log-odds_ or _logit_. Instead of linear regression where one unit change in the response variable _Y_ results in one unit change of _X_, in logistic regression, increasing _X_ by one unit changes the log odds by $β1$. Since the probability response is not a straight line, the amount of change one unit has across values of _X_ changes depending on the value of _X_. However, if $β1$ is positive, then increasing _X_ will result in an increase in probability, and vice-versa.
+
+### Estimating the Regression Coefficients.
+
+The coefficients $β0$ and $β1$ are initially unknown, and must be estimated based on the available training data. Recall that linear regression uses the _least squares approach_ to estimate the coefficients. For logistic regression, the more general method of _maximum likelihood_ is preferred for its robust statistical properties. Basically, the algorithm tries to find coefficients that _maximize the likelihood_ that the probabilities are closest to 1 for people who defaulted, and close to zero for people who did not. 
+
+Let's fit a basic model to these values and inspect the results.
+
+```{r}
+logit <- glm(default ~ balance, data=Default, family='binomial')
+summary(logit)
+```
+
+Here we see that $β1$ is 0.005, this means that `balance` is associated with an increase in probability of `default`. Specifically, a one-unit increase in `balance` increases the log odds of `default` by 0.0055 units.
+
+Other components of the logistic regression output are similar to linear regression. We can use the standard error to measure accuracy, and the P-value to assess significant influence in the model.
+
+for qualitative predictors, we can take the same dummy variable approach as in linear regression
+
+```{r}
+# Create a new dummy variable for students
+Default$studentD <- 0
+Default$studentD[Default$student=="Yes"] <- 1
+
+logit <- glm(default ~ studentD, data=Default, family='binomial')
+summary(logit)
+```
+
+From these diagnostics we see that the model predicts that students tend to have higher default probabilities than non-students.
+
+### Multiple Logistic Regression
+
+```{r}
+logit <- glm(default ~ income + balance + studentD, family='binomial', data=Default)
+summary(logit)
+```
+
+There is a very interesting result here. Recall that for the bi variate logistic regression between `default` and `student` predicted that students are more likely to default than non-students. However, we see here that when paired with balance and income, `students` are less likely to default than non-students. What is going on here? This means that for a _fixed value_ of `balance` and `income`, a student is less likely to default than a non-student. In-fact, the student default rate is below non-student default rates for all values of balance. Yet, if we averaged the students variable, the overall student default rate is higher than the non-student default rate, which is why the bi variate regression indicates a positive coefficient. The reason for this is because the features `student` and `balance` are mildly correlated. Thus, students tend to hold higher levels of debt, which is associated with higher probability of defaulting. Thus we could conclude that a student is more likely to default than a non-student if no credit card balance information is available. However, students are actually less risky than non-students with the same credit card balance. This phenomenon is known as _confounding_.
+
+### Logistic Regression for > 2 Response Classes
+
+While we could extend the logistic model for > 2 response classes, the __discriminant analysis__ approach, discussed here[]() is preferred.
+
+## Example 1: College Admissions
+
+In this dataset we are interested in building a predictive model to see how variables, like the GRE (Graduate Record Exam scores), GPA, and prestige of the individuals undergraduate institution, effect graduate school admission. The response variable _Y_ being `admit / not-admit`.
+
+```{r}
+# Load the data
+data <- read.csv("http://www.ats.ucla.edu/stat/data/binary.csv")
+str(data)
+
+# Some basic statistics
+summary(data)
+sapply(data, sd) # standard deviation
+
+# Two-way contigency table, to ensure no 0 cells
+xtabs(~admit + rank, data=data)
+```
+
+Next we will have to clean  the data a little, since the `admit` and  feature is an integer type, while we need it as categorical factors.
+
+```{r}
+data$rank <- factor(data$rank)
+```
+
+```{r}
+# Fit the first logit model
+logit <- glm(admit ~ gre + gpa + rank, data=data, family = 'binomial')
+summary(logit)
+```
+
+Excellent, these are rather strong looking results. We see that all the variables are significant. Using the coefficients we can begin to interpret the meaning of the results. R outputs these as _log odds_.
+
+  * For every one unit change in `gre`, the log odds of admission increases by 0.0022.
+  * For every one unit increase in `gpa`, the log odds of being admitted increases by 0.804.
+  * The `rank` variables have a slightly different interpretation. If you attended a rank 2, versus a rank 1, changes the log odds of admission by -0.675. Recall with dummy variables, that we are treating ` rank 1` as the _baseline_ feature. So all the visible ranks are in reference to rank 1.
+  
+Next we can use the `confint` function to obtain confidence intervals for the coefficient estimates. For logistic regression, these are based on the log-likelihood function. We could also get confidence using the standard errors.
+
+```{r}
+confint(logit) # Using LL
+confint.default(logit) # Using standard errors
+```
+
+Since the rank variable is qualitative, and is split into individual ranks, we could also test the overall effect of `rank` in the model using a `wald.test` from the `aod` library.
+
+```{r}
+library(aod)
+wald.test(b = coef(logit), Sigma = vcov(logit), Terms=4:6)
+```
+
+As expected, the effect of `rank` is statistically significant. We can further this analysis by testing if there are significant differences between levels 2-4 of the rank variable. This is not present in the existing model since we are comparing all levels of rank to the baseline rank 1. Below we test that the coefficient for `rank`=2 is equal to the coefficient for `rank`=3. The first line of code below creates a vector l that defines the test we want to perform. In this case, we want to test the difference (subtraction) of the terms for `rank`=2 and `rank`=3 (i.e., the 4th and 5th terms in the model). To contrast these two terms, we multiply one of them by 1, and the other by -1. The other terms in the model are not involved in the test, so they are multiplied by 0. The second line of code below uses L=l to tell R that we wish to base the test on the vector l (rather than using the Terms option as we did above).
+
+```{r}
+l <- cbind(0,0,0,1,-1,0)
+wald.test(b=coef(logit), Sigma=vcov(logit), L=l)
+```
+
+Indeed, there is a significant difference between rank 2 and 3. 
+
+## Interpreting odds ratios
+
+Currently, the coefficients are output as log ratios, which are very difficult to interpret in a meaningful way. To remedy this, we can exponentiation the coefficients and interpret them as _odds ratios_.
+
+```{r}
+# Odds ratios
+exp(coef(logit))
+# Odds ratio and 95% CI
+exp(cbind(OR = coef(logit), confint(logit)))
+```
+
+Now we can say more relevant things like, for every one unit increase in `gpa`, the odds of being admitted to graduate school (vs not being admitted) increases by a factor of 2.23.
+
+We can also use the predicted probabilities to understand the model. First we will calculate predicted probabilities of admission at each value of `rank`, holding `gre` and `gpa` at their means.
+
+```{r}
+# Create new dataframe
+ranktest <- with(data, data.frame(gre=mean(gre), gpa=mean(gpa), rank=factor(1:4)))
+ranktest
+
+ranktest$rankP <- predict(logit, newdata=ranktest, type='response')
+ranktest
+```
+
+Very cool, now we can see very clearly, that if all else remains constant, a rank 1 school student will have a 52% chance of being admitted, while the lowest ranked schools will have an 18% chance of admittance.
+
+ We can also extend this same procedure for a range of `gre` values, rather than just the means. We now test the effect of `gre` ranging from a score between 200 and 800 at each rank.
+ 
+```{r}
+tmp <- with(data, data.frame(gre=rep(seq(200, 800, length.out=100), 4), gpa=mean(gpa), rank = factor(rep(1:4, each = 100))))
+
+# Get probabilities and standard errors (for plotting)
+probs <- cbind(tmp, predict(logit, newdata=tmp, type='link', se=TRUE))
+# Get a look at this new data
+head(probs)
+
+probs <- within(probs, {
+  PredProb <- plogis(fit) # fit logistic curve
+  LL <- plogis(fit - (1.96 * se.fit)) # create lower limits
+  UL <- plogis(fit + (1.96 * se.fit))
+})
+```
+
+Graph the output...
+
+```{r fig.retina=2, fig.height=8, fig.width=10}
+ggplot(probs, aes(x=gre, y=PredProb)) +
+  geom_ribbon(aes(ymin=LL, ymax=UL, fill=rank), alpha=0.2) + 
+  geom_line(aes(color=rank))
+```
+
+### Measuring model fit
+
+Coming later...
+
+
+## Example 2: Stock Market Data
+
+This data can be found in the `ISLR` package. The dataset is percentage returns for the S&P 500 stock index over 1 250 dates from 2001 to 2005. For each date there are percentage returns recorded for each of the five previous trading dates, `Lag1 - Lag5`. There is also recorded `volume` (the number of shares traded on the previous day, in billions), `Today`: the percentage return on the given date, and `Direction`: whether the market was up or down on the given date.
+
+```{r}
+library(ISLR)
+str(Smarket)
+# Correlation minus the Direction variable
+cor(Smarket[,-9])
+```
+
+From this output we can see there is no real correlation between the percent returns `Today` and any of the `lag` variables, but there is a notable correlation between the `year` and `volume`. The correlation we are seeing is that Volume is increasing over time.
+
+```{r fig.retina=2, fig.height=4}
+attach(Smarket)
+plot(Volume)
+```
+
+Next let's start by fitting a logistic regression will all the variables using the `glm()` function, with `family='binomial`.
+
+```{r}
+# Split data into testing and training
+train<-Smarket[Year<2005,]
+test<-Smarket[Year==2005,]
+```
+
+Here we fit a logistic model to the stock market data using first the build in R functions, then using the `caret` package.
+
+```{r}
+library(caret)
+
+logit <- glm(Direction ~ Lag1+Lag2+Lag3, family='binomial', data=train)
+summary(logit)
+
+# Run the model on the test set
+test.probs <-predict(logit, test, type='response')
+pred.logit <- rep('Down',length(test.probs))
+pred.logit[test.probs>=0.5] <- 'Up'
+
+table(pred.logit, test$Direction)
+confusionMatrix(test$Direction, pred.logit)
+```
+
+
+```{r}
+
+
+modelFit<- train(Direction~Lag1+Lag2+Lag3, method='glm',preProcess=c('scale', 'center'), data=train, family=binomial(link='logit'))
+
+summary(modelFit)
+confusionMatrix(test$Direction, predict(modelFit, test))
+```
+
+As you can see, we are able to obtain about 59% accuracy overall, which isn't very good. However, we have 78% prediction accuracy on 'Up' days. Perhaps this means we can trade with confidence when our model predicts and 'Up' day in the future. The models are not overly significant because lagged stock market data isn't usually the best indicator of performance.
+
+To predict `Direction` for new values of Lag1-Lag3 we simply use the `predict()` function and feed in a data frame of new values.
