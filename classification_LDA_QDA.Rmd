@@ -11,10 +11,7 @@ output:
 ---
 
 [Visit my website](http://rmdk.ca/) for more like this!
-```{r}
-require(knitr)
-library(ggplot2)
-```
+
 #### Data Sources:
 
 Heavily borrowed from:
@@ -25,6 +22,9 @@ Heavily borrowed from:
 
 * [Wikipedia](http://en.wikipedia.org/)
 
+```{r}
+require(knitr)
+```
 ## 1.0 Overview
 
 LDA provides a less direct approach to modeling the predicted probabilities given some set of predictor(s) _X_. This algorithm models the distribution of the predictors _X_ separately in each of the response classes (given _Y's_), and the uses Bayes' theorem to flip them around into estimates. When these distributions are assumed to be normal, it turns out that the model is very similar to logistic regression.

@@ -1,0 +1,147 @@
+---
+title: "Classification KNN"
+author: "Ryan Kelly"
+date: "June 29, 2014"
+output:
+  html_document:
+    fig_height: 4
+    highlight: pygments
+    toc: yes
+---
+
+[Visit my website](http://rmdk.ca/) for more like this!
+```{r}
+require(knitr)
+library(ggplot2)
+```
+#### Data Sources:
+
+Heavily borrowed from:
+
+* Textbook: [Introduction to statistical learning](http://www-bcf.usc.edu/~gareth/ISL/)
+
+* Textbook: [Elements of statistical learning](https://statistics.stanford.edu/~tibs/ElemStatLearn/)
+
+* UCLA Example [link](http://www.ats.ucla.edu/stat/r/dae/logit.htm)
+
+* [Wikipedia](http://en.wikipedia.org/)
+
+## 1.0 Code Example
+
+This is continuation of [this notebook](http://rpubs.com/ryankelly/LDA-QDA)
+
+```{r}
+library(class)
+library(ISLR)
+attach(Smarket)
+
+train <- Year >= 2005
+test <- Year < 2005
+
+trainX = cbind(Lag1, Lag2)[train,]
+testX = cbind(Lag1, Lag2)[!train,]
+trainY = Direction[train]
+testY = Direction[!train]
+```
+
+```{r}
+library(caret)
+
+set.seed(1)
+knn.pred = knn(trainX, testX, trainY, k=3)
+table(knn.pred, testY)
+
+confusionMatrix(knn.pred, testY)
+```
+
+Thus QDA seems to provide the best fit to the data.
+
+## Example 2.0 Caravan Insurance 
+
+This dataset is also part of the `ISLR` library. the dataset includes 85 predictors for 5 822 individuals. The response variable is `Purchase`, which indicates an individual purchases an insurance policy. In this dataset only ~6% of people purchased insurance.
+
+
+```{r}
+attach(Caravan)
+dim(Caravan)
+summary(Caravan$Purchase)
+```
+
+The KNN classifier predicts the class of a given observation by identifying the observations that are nearest to it. Due to this design, the scale of the variables matters. Variables on a large scale will have a much larger effect on the `distance` between observations than smaller variables. the best way to fix this is to simply standardize the data. We also want to create training and testing data, we can do this all with the `caret` package.
+
+```{r}
+inTrain <- createDataPartition(y=Caravan$Purchase, p = 0.75, list=FALSE)
+
+train <- Caravan[inTrain,]
+test <- Caravan[-inTrain,]
+
+# Create preProcess object which will later feed into the training model
+pre <- preProcess(train[,-86], method=c('center','scale'))
+```
+
+Let's also see if we can eliminate any useless features from the model
+
+```{r}
+# Find variables with near zero variance
+nzv <- nearZeroVar(train, saveMetrics = TRUE)
+nzv
+```
+There are actually a lot of variables with near zero variance, which we will remove for now.
+
+```{r}
+train_nzv <- train[,!nzv$nzv]
+test_nzv <- test[,!nzv$nzv]
+```
+
+Next we can check for high levels of correlation
+
+```{r}
+cor <- cor(train_nzv[,-52])
+highCor <- findCorrelation(cor, cutoff = 0.75)
+highCor
+```
+Turns out that there are a lot of correlated variables, rather than removing them, why don't we try principal component analysis first.
+
+Now we can run the model on the data. However, from now on we might as well define the pre-processing within the `preProcess` attribute.
+
+```{r cache=TRUE}
+library(doMC)
+registerDoMC(cores = 6)
+
+knn.pred <- train(y=train$Purchase, x=train[,-86], 
+                  method='knn', 
+                  preProcess=c('center', 'scale'))
+knn.pred
+```
+
+```{r cache=TRUE}
+confusionMatrix(predict(knn.pred, test[,-86]), test$Purchase)
+```
+
+These results are pretty poor, using KNN we cannot seem to identify features that motivate insurance purchases. For comparison let's fit a logistic regression to the data.
+
+```{r cache=TRUE}
+logit <- train(Purchase ~., data=train,
+               method='glm',
+               preProcess=c('scale', 'center'),
+               family=binomial(link='logit'))
+logit
+```
+
+```{r}
+confusionMatrix(predict(logit, test[,-86]), test$Purchase)
+```
+
+This prediction doesn't work well at all using default settings, however, if we change the predictive probability threshold from 0.5 to 0.25, our predictive power for positive `Purchase`'s is 22.5%, which is almost 4 times more accurate than a null prediction model.
+
+
+```{r}
+pred.probs <- predict(logit, test[,-86],  type='prob')
+pred.probs
+pred <- rep('No', length(pred.probs[,1]))
+pred[pred.probs[2] > 0.25] <- 'Yes'
+table(pred)
+
+confusionMatrix(pred, test$Purchase)
+```
+

@@ -1,0 +1,21 @@
+---
+2title: "Classification 1 Full Example"
+author: "Ryan Kelly"
+date: "June 30, 2014"
+output: html_document
+---
+[Visit my website](http://rmdk.ca/) for more like this!
+
+#### Data Sources:
+
+Heavily borrowed from:
+
+* Textbook: [Introduction to statistical learning](http://www-bcf.usc.edu/~gareth/ISL/)
+
+* Textbook: [Elements of statistical learning](https://statistics.stanford.edu/~tibs/ElemStatLearn/)
+
+* [Wikipedia](http://en.wikipedia.org/)
+
+```{r}
+require(knitr)
+```

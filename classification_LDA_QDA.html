@@ -83,9 +83,6 @@ code > span.er { color: #ff0000; font-weight: bold; }
 </div>
 
 <p><a href="http://rmdk.ca/">Visit my website</a> for more like this!</p>
-<pre class="sourceCode r"><code class="sourceCode r"><span class="kw">require</span>(knitr)</code></pre>
-<pre><code>## Loading required package: knitr</code></pre>
-<pre class="sourceCode r"><code class="sourceCode r"><span class="kw">library</span>(ggplot2)</code></pre>
 <div id="data-sources" class="section level4">
 <h4>Data Sources:</h4>
 <p>Heavily borrowed from:</p>
@@ -94,6 +91,8 @@ code > span.er { color: #ff0000; font-weight: bold; }
 <li><p>Textbook: <a href="https://statistics.stanford.edu/~tibs/ElemStatLearn/">Elements of statistical learning</a></p></li>
 <li><p><a href="http://en.wikipedia.org/">Wikipedia</a></p></li>
 </ul>
+<pre class="sourceCode r"><code class="sourceCode r"><span class="kw">require</span>(knitr)</code></pre>
+<pre><code>## Loading required package: knitr</code></pre>
 </div>
 <div id="overview" class="section level2">
 <h2>1.0 Overview</h2>
@@ -167,7 +166,8 @@ lda.fit</code></pre>
 <p>No days in 2005 meet this threshold, actually, the greatest posterior probability of decrease in all of 2005 was 52.02%, which is not too conclusive.</p>
 <p>Again, here is how to do this using the <code>caret</code> package</p>
 <pre class="sourceCode r"><code class="sourceCode r"><span class="kw">library</span>(caret)</code></pre>
-<pre><code>## Loading required package: lattice</code></pre>
+<pre><code>## Loading required package: lattice
+## Loading required package: ggplot2</code></pre>
 <pre class="sourceCode r"><code class="sourceCode r">modelFit&lt;-<span class="st"> </span><span class="kw">train</span>(Direction~Lag1+Lag2, <span class="dt">method=</span><span class="st">'lda'</span>,<span class="dt">preProcess=</span><span class="kw">c</span>(<span class="st">'scale'</span>, <span class="st">'center'</span>), <span class="dt">data=</span>train)
 
 <span class="kw">confusionMatrix</span>(test$Direction, <span class="kw">predict</span>(modelFit, test))</code></pre>
@@ -241,8 +241,8 @@ modelFit</code></pre>
 ## 
 ## Resampling results
 ## 
-##   Accuracy  Kappa  Accuracy SD  Kappa SD
-##   0.5       0.007  0.02         0.04    
+##   Accuracy  Kappa   Accuracy SD  Kappa SD
+##   0.5       -0.003  0.03         0.05    
 ## 
 ## </code></pre>
 <pre class="sourceCode r"><code class="sourceCode r"><span class="kw">confusionMatrix</span>(test$Direction, <span class="kw">predict</span>(modelFit, test))</code></pre>
