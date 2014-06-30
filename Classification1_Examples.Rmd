@@ -19,3 +19,185 @@ Heavily borrowed from:
 ```{r}
 require(knitr)
 ```
+
+# Goals
+
+Using the Boston data set, fit classification models in order to predict whether a given suburb has a crime rate above or below the median. Explore logistic regression, LDA, and KNN models using various sub- sets of the predictors. Describe your findings.
+
+__Load the data__
+
+```{r}
+library(ISLR)
+library(MASS)
+library(caret)
+
+attach(Boston)
+help(Boston) # gives info about the variables of the data
+str(Boston)
+```
+
+```{r}
+# Create response variable
+Boston$resp <- "No"
+Boston$resp[crim > median(crim)] <- 'Yes'
+Boston$resp <-factor(Boston$resp)
+table(Boston$resp)
+
+# Drop old crim variable
+Boston <- Boston[-drop(1)]
+```
+
+The next thing we need to do is create training and testing data.
+
+```{r}
+inTrain <- createDataPartition(y = Boston$resp, p = 0.75, list = FALSE)
+
+train <- Boston[inTrain,]
+test <- Boston[-inTrain,]
+```
+
+
+```{r}
+nzv <- nearZeroVar(train, saveMetrics = TRUE)
+nzv
+
+Cor <- cor(train[,-14])
+Cor
+highCor <- findCorrelation(Cor, cutoff = 0.75)
+highCor
+```
+
+No variables are near zero variance. However, we see that `industrial area` and `NOx` are highly correlated with each other (and other variables), `property tax` is also highly correlated with other variables. For now we will remove the `property tax` variable and `NOx`.
+
+```{r}
+train_cor <- train[,-drop(c(4,9))]
+test_cor <- test[,-drop(c(4,9))]
+```
+
+Now let's try a few models...
+
+## KNN
+
+```{r}
+knnGrid <- expand.grid(.k=c(2))
+# Use k = 2, since we expect 2 classes
+KNN <- train(x=train_cor[,-12], method='knn',
+             y=train_cor$resp, 
+             preProcess=c('center', 'scale'), 
+             tuneGrid = knnGrid)
+KNN
+
+confusionMatrix(predict(KNN, test_cor[,-12]), test_cor$resp)
+```
+
+This gives us pretty good results, however, let's try using principal component analysis instead of removing correlated variables.
+
+```{r}
+KNN <- train(x=train[,-14], method='knn',
+             y=train$resp, 
+             preProcess=c('center', 'scale', 'pca'), 
+             tuneGrid = knnGrid)
+KNN
+
+confusionMatrix(predict(KNN, test[,-14]), test$resp)
+```
+
+Indeed, this model is about 3% better.
+
+## Logistic Regression
+
+```{r}
+logit <- train(resp~., data=train_cor, 
+               method='glm', family=binomial(link='logit'),
+               preProcess=c('scale', 'center'))
+summary(logit)
+
+confusionMatrix(predict(logit, test_cor[,-12]), test_cor$resp)
+```
+
+Most of these variables are actually not significant in the model, we might as well remove the non-significant ones.
+
+```{r}
+logit <- train(resp~age+rad+zn+medv, data=train_cor, 
+               method='glm', family=binomial(link='logit'),
+               preProcess=c('scale', 'center'))
+summary(logit)
+
+confusionMatrix(predict(logit, test_cor[,-12]), test_cor$resp)
+```
+
+While not substantial, this much simpler model yields about 2% increased performance. One of the benefits of logistic regression is that we can begin to understand which variables are more important to the model, therefore we gain insight into the behavior of the real word phenomena. 
+
+Let's try using `pca` like the above examples.
+
+```{r}
+logit <- train(resp~., data=train, 
+               method='glm', family=binomial(link='logit'),
+               preProcess=c('scale', 'center'))
+summary(logit)
+
+confusionMatrix(predict(logit, test[,-14]), test$resp)
+```
+
+The PCA version of logistic regression is actually better than the KNN model with PCA. However, we sacrifice some specificity for the gains in sensitivity.
+
+## LDA
+
+```{r}
+LDA <- train(resp~., data=train_cor,
+             method='lda', 
+             preProcess=c('scale', 'center'))
+LDA
+
+confusionMatrix(test_cor$resp, predict(LDA, test_cor[,-12]))
+```
+
+
+```{r}
+LDA <- train(resp~., data=train,
+             method='lda', 
+             preProcess=c('scale', 'center', 'pca'))
+LDA
+
+confusionMatrix(test$resp, predict(LDA, test[,-14]))
+```
+
+In this case the first model worked best (without `pca`).
+
+## QDA
+
+```{r}
+QDA <- train(resp~., data=train_cor,
+             method='qda', 
+             preProcess=c('scale', 'center'))
+QDA
+
+confusionMatrix(test_cor$resp, predict(LDA, test_cor[,-12]))
+```
+
+```{r}
+QDA <- train(resp~., data=train,
+             method='qda', 
+             preProcess=c('scale', 'center', 'pca'))
+QDA
+
+confusionMatrix(test$resp, predict(LDA, test[,-14]))
+```
+
+These results are slightly better than LDA, but less than Logistic regression.
+
+## Random Forests
+
+```{r}
+library(doMC)
+registerDoMC(6)
+
+fun <- train(y=train$resp, x=train[,-14])
+fun
+
+confusionMatrix(test$resp, predict(fun, test[,-14]))
+```
+
+## Moving forward with logistic regression
+
+

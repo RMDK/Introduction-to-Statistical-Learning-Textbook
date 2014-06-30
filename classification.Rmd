@@ -11,10 +11,7 @@ output:
 ---
 
 [Visit my website](http://rmdk.ca/) for more like this!
-```{r}
-require(knitr)
-library(ggplot2)
-```
+
 #### Data Sources:
 
 Heavily borrowed from:
@@ -27,6 +24,9 @@ Heavily borrowed from:
 
 * [Wikipedia](http://en.wikipedia.org/)
 
+```{r}
+require(knitr)
+```
 ## 1.0 Overview
 
 Linear regression ([tutorial here()]) assumes that the response variable _Y_ is quantitative. However, in many situations we are dealing with _qualitative_ response variables. Generally, we will refer to these types of variables as __categorical__ variables. For example: eye color is categorical since it has values like _brown_, _blue_, and _green_. Classification thereby involves assigning categorical variables to a specific class. Usually, we predict the probability of any observation belonging to a specific class. 
