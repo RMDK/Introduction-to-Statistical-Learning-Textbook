@@ -1,0 +1,33 @@
+---
+title: "Auto Markdown Tables"
+author: "Ryan Kelly"
+date: "July 2, 2014"
+output:
+  html_document:
+    theme: spacelab
+---
+
+[my website](http://www.rmdk.ca)
+
+```{r}
+library(knitr)
+attach(iris)
+```
+
+```{r}
+# Standard display
+head(iris)
+summary(iris)
+```
+
+To display markdown tables with `kable`, you need to set the chunk option `results="asis"`.
+
+```{r results='asis'}
+# Markdown table display
+kable(head(iris))
+kable(summary(iris))
+```
+
+## Check out many more advanced examples for tables in rmarkdown [here](http://rpubs.com/Thell/xtable).
+
+#### Enjoy more beautiful tables. For more options, see [the docs](http://www.rdocumentation.org/packages/knitr/functions/kable).
