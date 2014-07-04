@@ -1,0 +1,101 @@
+---
+title: "Linear Model Selection + Regularization"
+author: "Ryan Kelly"
+date: "July 4, 2014"
+output:
+  html_document:
+    highlight: pygments
+    theme: united
+    toc: yes
+---
+
+<hr>
+
+[Visit my website](http://rmdk.ca/) for more like this!
+
+#### Data Sources:
+
+Heavily borrowed from:
+
+* Textbook: [Introduction to statistical learning](http://www-bcf.usc.edu/~gareth/ISL/)
+
+* Textbook: [Elements of statistical learning](https://statistics.stanford.edu/~tibs/ElemStatLearn/)
+
+* UCLA Example [link](http://www.ats.ucla.edu/stat/r/dae/logit.htm)
+
+* [Wikipedia](http://en.wikipedia.org/)
+
+```{r load_knitr}
+require(knitr)
+```
+## Overview and Definitions
+
+In this lesson we consider some alternative fitting approaches for linear models, besides the usual _ordinary least squares_. These alternatives can sometimes provide better prediction accuracy and model interpretability.
+
+* _Prediction Accuracy_: Given that the true relationship between _Y_ and _X_ is approx. linear, the ordinary least squares estimates will have low bias. OLS also behaves well went _n_ >> _p_. Yet if _n_ is not much larger than _p_, then there can be a lot of variablility in the fit, resulting in overfitting and/or poor predictions. If _p_ > _n_, then there is no longer a unique least squares estimate, and the method cannot be used at all. By _constraining_ and _shrinking_ the estimated coefficients, we can often substantially redice the variance as the cost of a negligible increase in bias, which often leads to dramatic improvements in accuracy.
+
+* _Model Interpretability_: Often in multiple regression, many variables are not associated with the response. Irrelevant variables leads to unnecessary complexity in the resulting model. By removing them (setting coefficient = 0) we obtain a more easily interpretable model. However, using OLS makes it very unlikely that the coefficients will be exactly zero. Here we explore some approachs for automatically excluding features using this idea.
+
+    * _Subset Selection_: This approach identifies a subset of the _p_ predictors that we believe to be related to the response. We then fit a model using the least squares of the subset features.
+    
+    * _Shrinkage_. This approach fits a model involving all _p_ predictors, however, the estimated coefficients are shunken towards zero relative to the least squares estimates. This shrinkage, AKA _regularization_ has the effect of reducing variance. Depending on what type of shrinkage is performed, some of the coefficients may be estimated to be exxactly zero. Thus this method also performs variable selection.
+    
+    * _Dimension Reduction_: This approach involves projecting the _p_ predictors into an _M_-dimensional subspace, where _M_ < _p_. This is attained by computing _M_ different _linear combinations_, or _projections_, of the variables. Then these _M_ projections are used as predictors to fit a linear regression model by least squares.
+    
+Though we discuss the application of these techniques to linear models, they also apply to other methods like classification.
+
+# Methods in Detail
+
+## Subset Selection
+
+__Best Subset Selection__
+
+Here we fit a seperate OLS regression for each possible combination of the _p_ predictors and then look at the resulting model fits. The problem with this method is the _best model_ is hidden within 2^_p_ possibilities. The algorithm is broken up into two stages. (1) fit all models that contain _k_ predictors, where _k_ is the max length of the models. (2) select a single model using cross-validated prediction error. More specific prediction error methods like AIC and BIC are discussed below. It is important to use _testing_ or _validation_ error, and not training error to assess model fit because RSS and R^2 monotonically increase with more variables. The best approach is to cross validate and choose the model with the highest R^2 and lowest RSS on testing error estimates.
+
+> This works on other types of model selection, such as logistic regression, except that the score that we select upon changes. For logistic regression we would utilize _deviance_ instead of RSS and R^2.
+
+Next we discuss methods are are more computationally efficient.
+
+__Stepwise Selection__
+
+Besides computational ussies, the _best subset_ procedure also can suffer from statistical problems when _p_ is large, since we have a greater chance of overfitting.
+
+  * _Forward Stepwise Selection_ considers a much smaller subset of _p_ predictors. It begins with a model containing no predictors, then adds predictors to the model, one at a time until all of the predictors are in the model. The order of the variables being added is the variable which gives the greatest addition improvement to the fit, until no more variables improve model fit using cross validated prediction error. A _best subset_ model for _p_ = 20 would have to fit 1 048 576 models, where as forward stepwise only requires fitting 211 potential models. However, this method is not gaurenteed to find the model model. Forward stepwise regression can even be applied in the high-dimensional setting where _p_ > _n_.
+  
+  * _Backward Stepwise Selection_ begins will all _p_ predictors in the model, then iteratively removes the least useful predictor one at a time. Requires that _n_ > _p_.
+  
+  * _Hybrid Methods_ follows the forward stepwise approach, however, after adding each new variable, the method may also remove any variables that do not contribute to the model fit.
+  
+### Choosing the Best Model
+
+Each of the three above mentioned algorithms requires us to manually decide which model performs best. As mentioned before, the models with the most predictors will usually have the smallest RSS and largest R^2 when using training error. To select the model with the best _test_ error, we need to estimate the test error. There are two ways to compute test error.
+
+1. _Indirectly_ estimate the test error by making and _adjustment) to the training error to account for the overfitting bias.
+
+2. _Directly_ estimate the test error, using either a validation set, or cross-validation approach.
+
+### _C_<sub>_p_</sub>, AIC, BIC, and Ajusted _R_^2
+
+These four measures are the four common approaches to _adjust_ the training error to estimate test error.
+
+
+Essentially the _C_<sub>_p_</sub> statistic adds a penalty of 2 _d_ σ^2 to the training RSS given that the training error trends to underestimate the test error, where _d_ is the number of predictors and  σ^2 is an estimate of the variance of the error associated with each response measurement. 
+
+AIC criterion is defined for a large class of models fit by maximum likelihood (ML). In the case of a Gaussian model, ML and OLS are equivilent. Thus for OLS models, AIC and _C_<sub>_p_</sub> are proportional to each other and only differ in that AIC has an additive constant term.
+
+BIC is derived from a Bayseian point of view, but looks similar to AIC and _C_<sub>_p_</sub>. For a OLS model with _d_ predictors, the BIC replaces the 2 _d_ σ^2  from _C_<sub>_p_</sub> with $log(n) d σ^2$ , where _n_ is the number of observations. Since log _n_ > 2 for an _n_ > 7, the BIC statistic generally places a heavier penalty on models with many variables, and results in smaller models.
+
+The _adjusted_ _R_^2 adds a penalty term for additional varibles being added to the model.
+
+$$ Adjusted R^2 = 1 − 
+RSS/(n − d − 1) / TSS / (n-1)$$
+
+Unlike the earlier statistics, a _large_ value of Adjusted _R_^2 indicates a model with small test error. In theory, the model with the largest adjusted _R_^2 will have only correct variables and no noise variables. This is because unlike _R_^2, _Adjusted_ _R_^2 is penalized for inclusion of unnecessary variables in the model. Despite its pop- ularity, and even though it is quite intuitive, the adjusted R2 is not as well motivated in statistical theory as AIC, BIC, and _C_<sub>_p_</sub>. 
+
+All these statistics have rigorous theoretical justifications, but they still all rely (to some degree) on certain arguments, like large _n_. 
+
+### Validation and Cross-Validation
+
+These approaches discussed in detail [here](http://rpubs.com/ryankelly/resample).
+
+## Shinkage Methods
