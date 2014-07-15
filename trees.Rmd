@@ -2,7 +2,9 @@
 title: "Tree-Based Methods"
 author: "Ryan Kelly"
 date: "July 13, 2014"
-output: html_document
+output:
+  html_document:
+    toc: yes
 ---
 
 <hr>
@@ -25,4 +27,261 @@ Heavily borrowed from:
 require(knitr)
 ```
 
-## Overview and Definitions
+## Overview
+
+This notebook is about _tree-based_ methods for regression and classification. They involve _stratifying_ or _segmenting_ the predictor space into a number of more simple regions. To make a prediction for any given observation, we typically use the mean of the mode of the training observations in these regions to which is belongs. These splitting rules used to segment the predictor space can be summarized in a tree, hence they are usually called _decision tree_ methods.
+
+Tree methods are simple and useful for interpretation, however, they typically are not competitive with the best supervised learning methods in terms of prediction accuracy. Hence, in subsequent notebooks we also introduce bagging, random forests, and boosting. Each of these examples involve producing multiples trees, which are then combined to yield a single consensus prediction. We see that combining a large number of trees can result in dramatic improvements in prediction accuracy at the expensive of a loss in interpretation.
+
+Decision trees can be applied to both regression and classification problems. We will first consider regression.
+
+## Decision Tree Basics: Regression
+
+We begin with a simple example:
+
+We use the `Hitters` data from the `ISLR` library to predict a baseball player's `Salary` based on the number of `Years` he has played in the major league, and the number of `Hits` he made in the previous year.
+
+The result would be a series of splitting rules. The first split would segment the data into `Years < 4.5` on the left branch, and the remainder to the right. The predicted salary for these players is given by the mean response value from the players in either branch. Players with `Years >= 4.5` are assigned to the right branch, and then further subdivided by `Hits`. Players with `Years >= 4.5` and `Hits < 118` fall into the third region, and players with `Years >= 4.5` and `Hits >= 118` fall in the fourth region, each with their own predicted probabilities. The end points of the trees are called nodes, or leaves. We might interpret such a response as `Years` are the most important factor in determining `Salary`, and players with less experience have lower salaries. If the player is less experienced, the number of `Hits` last year plays a roll in his `Salary`. If we code this model, we see that the relationship ends up being slightly more complicated.
+
+
+```{r fig.retina=2}
+library(tree)
+library(ISLR)
+attach(Hitters)
+# Remove NA data
+Hitters<- na.omit(Hitters)
+# log transform Salary to make it a bit more normally distributed
+hist(Hitters$Salary)
+Hitters$Salary <- log(Hitters$Salary)
+hist(Hitters$Salary)
+
+tree.fit <- tree(Salary~Hits+Years, data=Hitters)
+summary(tree.fit)
+plot(tree.fit)
+```
+
+Now we discuss prediction via stratification of feature space, to build a regression tree. In general, there are two steps.
+
+1. Find the variable / split that best separates the response variable, which yields the lowest RSS.
+
+2. Divide the data into two leaves on the first identified node.
+
+3. Within each leaf, find the best variable/split that separates the outcomes.
+
+4. Continue until the groups are too small or sufficiently 'pure'.
+
+The goal being to find the number of regions the minimize RSS. However, it computationally unfeasible to consider every possible partition into _J_ regions. For this reason we take a _top-down_, _greedy_ approach. It is top-down because we start at a point where all the observation belongs to a single region. It is greedy because at each step of the tree-building process, the best split is chosen at that particular step, rather than looking ahead to see a split that will lead to a better tree in some future step.
+
+Once all the regions have been created, we predict the response for a given test observation using the mean of the training observations in each region.
+
+### Tree Pruning
+
+While the model above can produce good prediction on training data, basic tree methods are likely to over fit the data, leading to poor test performance. This is because the resulting trees tend to be too complex. A smaller tree with fewer splits often leads to lower variance, easier interpretation and lower test errors, at the cost of a little bias. One possible way to achieve this is to build a tree only so long as the decrease in RSS due to each split exceeds some (high) threshold. While this will certainly reduce tree size, it is too short sighted. This is because a seemingly worthless split early on in a tree can be followed by a very good split later. 
+
+Therefore, a better strategy is to grow a large tree, then _prune_ it back to obtain a better sub tree. Intuitively, our goal is to select a sub tree that leads to the lowest test error rate. To do this, we would normally use cross validation. However it is too cumbersome since there is an extremely large number of possible sub trees. 
+
+_Cost complexity pruning_ - also know as weakest link pruning gives us a way to remedy this problem. Rather than considering every possible sub tree, we consider a sequence of trees indexed by a non negative tuning parameter `alpha`.
+
+__Revised steps to building a regression tree_
+
+1. Use recursive binary splitting to grow a large tree based on training data, stopping only when each terminal node has fewer than some minimum number of observations.
+
+2. Apply cost complexity pruning to the large tree in order to obtain a sequence of best sub trees as a function of `alpha`.
+
+3. Use _k_-fold cross validation to choose `alpha`.
+
+4. Return the sub tree from step 2 that corresponds to the chosen value of `alpha`.
+
+```{r fig.retina=2, fig.width=10}
+library(caret)
+
+split <- createDataPartition(y=Hitters$Salary, p=0.5, list=FALSE)
+
+train <- Hitters[split,]
+test <- Hitters[-split,]
+
+#Create tree model
+trees <- tree(Salary~., train)
+plot(trees)
+text(trees, pretty=0)
+```
+
+```{r fig.retina=2}
+#Cross validate to see whether pruning the tree will improve performance
+cv.trees <- cv.tree(trees)
+plot(cv.trees)
+```
+
+It seems like the 7th sized trees result in the lowest deviance. We can then prune the tree. However, this doesn't really prune the model, therefore we can select a smaller size where the improvement in deviance plateaus. This would be around the 4rd split.
+
+```{r fig.retina=2, fig.width=10}
+prune.trees <- prune.tree(trees, best=4)
+plot(prune.trees)
+text(prune.trees, pretty=0)
+```
+
+Use the pruned tree to make predictions on the test set.
+
+```{r}
+yhat <- predict(prune.trees, test)
+plot(yhat, test$Salary)
+abline(0,1)
+mean((yhat - test$Salary)^2)
+```
+
+
+## Classification Trees
+
+Classification trees are very similar to regression trees, except that it is used to predict a qualitative response rather than a quantitative one. For a regression tree, the predicted response for an observation is given by the mean response of the training observations in that branch. In contract, for classification trees, we predict that each observation belongs to the most _commonly occuring_ class of training observation in the region in belongs. When interpreting the results of a classification tree, we are often interested in not only the predictions for each node, but also the _class proportions_ in the region.
+
+To grow a classification tree, we use the same recursive binary splitting, but now RSS cannot be used as a splitting criterion. The alternative is to use the _classification error rate_. While it is intuitive, it turns out that this method is not sensitive enough for tree-growing. 
+
+In practise two other methods are preferable, though they are quite similar numerically:
+
+__Gini index_ is a measure of the total variance across _K_ classes.
+
+__Cross-entropy_ will take on a value near zero if the proportion of training observations in the given category are all near zero or one.
+
+These two methods are preferred when pruning the tree, but the regular classification error rate is preferable if the prediction accuracy of the final pruned model is the goal.
+
+To demonstrate this we will use the `Heart` dataset. These data contain a binary outcome variable `AHD` for 303 patients who presented with chest pain. The outcomes are coded as `Yes` or `No` for presence of heart disease.
+
+
+```{r results="asis", fig.retina=2}
+Heart <-read.csv('http://www-bcf.usc.edu/~gareth/ISL/Heart.csv')
+kable(head(Heart))
+dim(Heart)
+```
+
+```{r fig.retina=2}
+split <- createDataPartition(y=Heart$AHD, p = 0.5, list=FALSE)
+train <- Heart[split,]
+test <- Heart[-split,]
+
+trees <- tree(AHD ~., train)
+plot(trees)
+```
+
+So far this is a pretty complex tree. Let's identify if we can improved the fit with a pruned version via cross validation using a miss classification scoring method.
+
+```{r fig.retina=2, fig.width=10}
+cv.trees <- cv.tree(trees, FUN=prune.misclass)
+plot(cv.trees)
+cv.trees
+```
+
+It looks like a 4 split tree has the lowest deviance. Let's see what this tree looks like. Again we use `prune.misclass` for classification settings.
+
+
+```{r fig.retina=2, fig.width=10}
+prune.trees <- prune.misclass(trees, best=4)
+plot(prune.trees)
+text(prune.trees, pretty=0)
+
+tree.pred <- predict(prune.trees, test, type='class')
+confusionMatrix(tree.pred, test$AHD)
+```
+
+Here we obtain about 76% accuracy. Pretty sweet.
+
+Something to note here. In the unpruned tree there is actually a split that yields the same predicted value (yes and yes). So why is the split done at all? The split leads to increased _node purity_, which will likely result in better predictions when using test data.
+
+## Trees vs. Linear Models
+
+The best models always depend on the problem at hand.  If the relationship can be approximated by a linear model, then linear regression will likely dominate. If instead we have a complex, highly non-linear relationship between the features and the response, a decision tree may outperform the classical approaches. Also, sometimes improved interpretation can be chosen above simply test error rate. 
+
+## Pros / Cons of Trees
+
+__Advantages__:
+
+  * Trees are easy to explain, even more so than linear regression.
+  
+  * More closely mirrors human decision making.
+  
+  * Easily displayed graphically.
+  
+  * Can handle qualitative predictors without dummy variables.
+  
+__Disadvantages__:
+
+  * Trees generally do not have the same level of prediction accuracy as classical approaches, however, methods like _bagging, random forests, and boosting_ can improve the performance. These topics are up in the next lesson.
+  
+## Extra Examples
+
+```{r results='asis'}
+library(rpart.plot) # use prp() to make cleaner plot with caret
+library(ISLR)
+attach(Carseats)
+kable(head(Carseats))
+# Change Sales to a qualitative variable by splitting it on the median.
+Carseats$Sales <- ifelse(Sales <= median(Sales), 'Low', 'High')
+Carseats$Sales <- factor(Carseats$Sales)
+
+Carseats<-na.omit(Carseats)
+#Split data into train / validation
+set.seed(111)
+split <- createDataPartition(y=Carseats$Sales, p=0.6, list=FALSE)
+train <- Carseats[split,]
+test <- Carseats[-split,]
+
+sales.tree <- tree(Sales ~., data=train)
+summary(sales.tree)
+```
+
+Here we see the training error is  about 9%. We use `plot()` to display the tree structure and `text()` to display the node labels.
+
+```{r fig.retina=2, fig.width=10}
+plot(sales.tree)
+text(sales.tree, pretty=0)
+```
+
+Let's see how the full tree handles the test data.
+
+```{r}
+sales.pred <- predict(sales.tree, test, type='class')
+confusionMatrix(sales.pred, test$Sales)
+```
+
+A test error rate of ~74% is pretty good! But we could potentially improve it with cross validation.
+
+```{r}
+set.seed(12)
+cv.sales.tree <- cv.tree(sales.tree, FUN=prune.misclass)
+plot(cv.sales.tree)
+```
+
+Here we see that the the lowest  / simplest misclassification error is for a 4 leaf model. We can now prune the tree to a 4 leaf model.
+
+```{r}
+prune.sales.tree <- prune.misclass(sales.tree, best=4)
+prune.pred <- predict(prune.sales.tree, test, type='class')
+
+plot(prune.sales.tree)
+text(prune.sales.tree, pretty=0)
+
+confusionMatrix(prune.pred, test$Sales)
+```
+
+This doesnt really improve our classification, but we greatly simplified our model.
+
+
+```{r fig.retina=2}
+# Specify cross validation tuning
+fitControl <- trainControl(method = "cv",
+                            number = 10,
+                           classProbs=TRUE, 
+                           summaryFunction=twoClassSummary)
+
+set.seed(123123)
+sales.tree <- train(Sales ~., train,
+                   trControl=fitControl,
+                    metric='ROC',
+                    method='rpart')
+sales.tree
+prp(sales.tree$finalModel, extra=2)
+
+sales.tree.pred <- predict(sales.tree, test)
+confusionMatrix(sales.tree.pred, test$Sales)
+```
+
+Caret opts for an even simpler tree, with a small reduction in prediction accuracy.

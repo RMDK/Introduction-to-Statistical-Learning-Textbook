@@ -1,0 +1,179 @@
+---
+title: "Bagging, Random Forests, Boosting"
+author: "Ryan Kelly"
+date: "July 14, 2014"
+output:
+  html_document:
+    highlight: pygments
+    theme: flatly
+    toc: yes
+---
+
+<hr>
+
+[Visit my website](http://rmdk.ca/) for more like this!
+
+#### Data Sources:
+
+Heavily borrowed from:
+
+* Textbook: [Introduction to statistical learning](http://www-bcf.usc.edu/~gareth/ISL/)
+
+* Textbook: [Elements of statistical learning](https://statistics.stanford.edu/~tibs/ElemStatLearn/)
+
+* UCLA Example [link](http://www.ats.ucla.edu/stat/r/dae/logit.htm)
+
+* [Wikipedia](http://en.wikipedia.org/)
+
+```{r load_knitr}
+require(knitr)
+```
+
+## Overview
+
+For an introduction to tree based methods, which this lecture builds upon. See my other notebook [here](http://rpubs.com/ryankelly/dtrees). The new methods explained here build upon these basics to construct more powerful prediction models, and remedy some of the drawbacks of classical tree methods.
+
+## Bagging
+
+It turns out that bootstrapping can be used in a different context that usual for improving tree based learning methods. Recall that decision trees suffer from _high variance_. This means that if we split the training data into two parts at random, and fit a decision tree to both halves, the results that we may get could be quite different. What we really want is a result that has low variance if applied repeatedly to distinct data sets. Bootstrapping of course is a natural solution, since it is designed as a general-purpose procedure for reducing variance. __Bagging__ is essentially taking repeated samples from the single training set in order to generate _B_ different bootstrapped training data sets. We then train our method on the _b_th training set and average all the predictions.
+
+For decision trees, we simply construct _B_ regression trees using _B_ bootstrapped training sets, and average the resulting predictions. The trees are grown deep and are not pruned. Thus each individual tree has high variance, but low bias. Averaging these _B_ trees reduces the variance. Bagging can dramatically reduce variance by combining hundreds or thousands of trees into a single procedure. For a qualitative _Y_, the simplest solution is for a given observation, we record the class predicted by each _B_ tree and take a _majority vote_. Generally, the value of _B_ is not critical. In practise we use a value of _B_ sufficiently large that the error has settled down.
+
+### Out-of-Bag Error Estimation
+
+There is an easy way to estimate the test error of a bagged model, without the need for cross-validation. One can show that on average, each bagged tree makes use of around two-thirds of the observations. The remaining one-third of the observations not used to fit a given bagged tree are referred to as the out-of-bag (OOB) observations. We can simply predict the response for the _i_th observation using each of the trees in which that observation was OOB. This yields around _B_ / 3 predictions for the _i_th observation. To obtain a single prediction for the _i_th observation we average those predicted responses, or take a majority vote, depending on if the response is quantitative or qualitative. Since an OOB prediction can be computed for all _n_ observations, an overall OOB MSE or classification error rate can be computed. This is an acceptable test error rate because the predictions are based on only the trees that were not fit using that observation.
+
+One problem with computing fully grown trees is that we cannot easily interpret the results. And it is no longer clear which variables are important to the relationship. However, we are able to obtain an overall summary of the importance of each predictor using the RSS or Gini index (for classification). We simply record the total amount that the RSS is decreased due to splits over a given predictor, averaged over all _B_ trees. A large value then indicates an important predictor.
+
+## Random Forests
+
+Random forests provides an improvement over bagged trees by using a small tweak that _decorrelates_ the trees. As in bagging, we build a number of trees based on bootstrapped training samples, but this time a split in a tree is considered, a random sampled of _m_ predictors is chosen as split candidates from the full set of _p_ predictors. The split is then allowed to only use one of those _m_ predictors. A fresh sample of _m_ predictors is taken at each split, where _m_ is approx. equal to the square root of the total number of predictors. In other words, at each split in the tree, the algorithm is not even allowed to consider a majority of the available predictors. Let's explain an example...
+
+Suppose that there is one very strong predictor in the dataset, along with a number of other moderately strong predictors. In the collection of bagged trees, most of the trees will use this very strong predictor in the top split, consequently making most of the bagged trees look quite similar, and be highly correlated. Unfortunately, averaging many highly correlated quantities does not lead to as large of a reduction in variance as averaging many _uncorrelated_ quantities. Random Forests overcomes this problem by forcing each split to consider only a subset of the predictors. Thus, on average, (_p_ - _m_) / _p_ of the splits will not even consider the strong predictor. This is what is meant by _decorrelating the trees_. If _m_ = _p_ then random forests is equal to bagging. 
+
+Using a small value of _m_ will typically be helpful with a large number of correlated predictors.
+
+## Boosting
+
+Boosting is another approach for improving the prediction power from a decision tree. Boosting works similarly to _bagging_ except that the trees are grown _sequentially_ each tree is grown using information from previously grown trees. Boosting also does not involve bootstrapping, instead each tree is fit on a modified version of the original data.
+
+Instead of fitting a single large decision tree, which results in hard fitting the data, and potentially overfitting. The boosting approach learns slowly. Given the current model, we fit a decision tree to the residuals from the model, rather than the outcome _Y_. We then add this new decision tree into the fitted function in order to update the residuals. Each of these trees can be rather small, determined by a tuning parameter _d_. By fitting small trees to the residuals, we slowly improve the fit in areas where it does not perform well.  A second tuning parameter _lambda_ slows the processes even further by allowing more and different shaped trees to attack the residuals.
+
+Boosting has three tuning parameters overall. 
+
+1. The number of trees _B_. Except we must note that boosting can over fit if _B_ is too large, although this overfitting tends to not be very severe. We use cross validation to select B.
+
+2. Shrinkage parameter _lambda_, a small positive number. This controls the boosting learning rate. Typical values are 0.01 or 0.001, but it depends on the problem. Smaller _lambda_ requires larger _B_ to achieve good performance.
+
+3. The number of _d_ splits in each tree, which controls the complexity of the boosting. Often _d_ = 1 works well, where each tree is a stump, consisting of a single split. 
+
+In general, boosting can improve upon random forests, and are easier to interpret because of the smaller tree structure.
+
+## Code Examples
+
+Here we will be using the `Boston` dataset and the `randomForest` package. We will not discuss bagging, since boosting and random forests tend to outperform it.
+
+```{r results='asis'}
+library(randomForest)
+library(MASS)
+attach(Boston)
+
+kable(head(Boston))
+```
+
+### Random Forest
+
+The `mtry` attribute indicates how many predictors should be considered for each split of the tree. By default random forests uses _p_ / 3 for regression trees, and sqrt _p_ for classification trees. Here we use `mtry = 6`.
+
+```{r}
+library(caret)
+set.seed(123)
+split <- createDataPartition(y=Boston$medv, p = 0.7, list=FALSE)
+train <- Boston[split,]
+test<- Boston[-split,]
+
+rf <- randomForest(medv~., data=train, mtry=6, importance = TRUE)
+yhat <- predict(rf, test)
+
+mean((yhat - test$medv)^2)
+```
+
+Here we can an excellent MSE of only ~7. Using the `importance()` function we can view the importance of each variable.
+
+```{r}
+kable(importance(rf))
+```
+
+Two measures of variable importance are measured. The %IncMSE is based on the mean decrease in accuracy in predictions on the out of bag samples, when the given variable was excluded from the model. IncNodePurity is a measure of the total decrease in node impurity that results from splits over that variable, averaged over all trees. We can plot the importance with `varImpPlot()`.
+
+```{r fig.retina=2}
+varImpPlot(rf)
+```
+
+### Using the caret package
+
+```{r cache=TRUE}
+# library(doMC)
+# registerDoMC(6)
+
+rf.caret <- train(medv ~., train,
+            preProc=c('center', 'scale'),
+            method='rf',
+            importance=TRUE)
+
+rf.caret
+varImpPlot(rf.caret$finalModel)
+yhat.caret <- predict(rf.caret, test)
+mean((yhat.caret - test$medv)^2)
+```
+
+Here we note that using _m_ = 7 can slightly improve performance. Though it appears that _m_ is not terrible sensitive.
+
+## Boosting
+
+For boosting we first use the `gmb` package and `gbm()` function to fit a boosted regression tree to the `Boston` data. The parameter `distribution = 'gaussian'` is used for regression, and `distribution='bernoulli'` is used for binary classification. The option `n.trees=5000` indicates that we want 5000 trees, and `interaction.depth` limits the depth of each tree.
+
+```{r cache=TRUE}
+library(gbm)
+
+boost <- gbm(medv~. , data=train, 
+             distribution = 'gaussian', 
+             n.trees = 5000, 
+             interaction.depth = 4)
+
+summary(boost)
+```
+
+Clearly, `lstat` and `rm` are by far the most important variables. We can also produce `partial dependence plots` for these two variables, which illustrates the marginal effect of the selected variables on the response after integrating out the other variables. As we expect, median house prices increase with `rm` and decrease with `lstat`.
+
+```{r fig.retina=2, fig.width=8}
+par(mfrow=c(1,2))
+plot(boost, i='rm')
+plot(boost, i='lstat')
+```
+
+Now apply the boosted model to predict the test set.
+
+```{r}
+boost.pred <- predict (boost, test, n.trees=5000)
+mean((boost.pred - test$medv)^2)
+```
+
+Here we obtain a slightly higher MSE than random forests, however we have only used the default parameters. Let's use `caret` to choose better parameters
+
+```{r cache=TRUE}
+ctr <- trainControl(method = "cv", number = 10)
+                            
+boost.caret <- train(medv~., train,
+                     method='bstTree',
+                     preProc=c('center','scale'),
+                     trControl=ctr)
+
+boost.caret
+plot(boost.caret)
+
+boost.caret.pred <- predict(boost.caret, test)
+mean((boost.caret.pred - test$medv)^2)
+```
+
+Here, with some better tuned parameters, we see a higher prediction accuracy than random forests.
